@@ -1,0 +1,837 @@
+openapi: "3.1.0"
+info:
+  title: Food Delivery API
+  description: |
+    Документация для контент-тренажёра. Описывает **идеальное поведение API** (v2) — все баги v1 исправлены.
+
+    Используется для съёмок видео:
+    - Как *должно* работать — по этой документации
+    - Как *реально* работает — v1 с багами
+
+    ---
+
+    ## 🔍 Как тестировать
+
+    Подставьте `X-API-Key` в заголовки. Если не указать — создастся анонимная сессия.
+    Каждый пользователь видит только свои сущности (stores, cart, orders).
+
+    ## 🗄️ База данных
+
+    SQLite, таблицы: `sessions`, `stores`, `products`, `cart_items`, `orders`, `order_items`.
+    Все запросы к БД фильтруются по `user_token` — пользователь изолирован.
+
+    ---
+
+    **v2 (фиксы):** `http://localhost:3004`
+    **v1 (баги):** `http://localhost:3003`
+
+  version: "2.0.0"
+  contact:
+    name: eddytester
+    url: https://eddytester.com
+servers:
+  - url: http://localhost:3004
+    description: v2 — исправленная версия
+  - url: http://localhost:3003
+    description: v1 — версия с багами
+paths:
+  /stores:
+    get:
+      summary: Список магазинов
+      description: |
+        Возвращает магазины текущего пользователя.
+        Поддерживает фильтрацию по `type` и `city`.
+
+        **SQL:**
+        ```sql
+        SELECT * FROM stores
+        WHERE user_token = ?
+        ORDER BY created_at DESC;
+        ```
+        С фильтром по типу:
+        ```sql
+        SELECT * FROM stores
+        WHERE user_token = ? AND type = ?
+        ORDER BY created_at DESC;
+        ```
+      tags: [Stores]
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            example: fast_food
+          description: Тип магазина (`fast_food`, `pizzeria`, `asian`, `restaurant`, `cafe`)
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+            example: Москва
+          description: Город
+      responses:
+        "200":
+          description: Список магазинов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Store"
+    post:
+      summary: Создать магазин
+      description: |
+        Добавляет новый магазин.
+
+        **SQL:**
+        ```sql
+        INSERT INTO stores (user_token, name, type, city, phone)
+        VALUES (?, ?, ?, ?, ?);
+        ```
+      tags: [Stores]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: Бургерная №1
+                  description: Название магазина (обязательно, не пустое)
+                type:
+                  type: string
+                  example: fast_food
+                  default: restaurant
+                city:
+                  type: string
+                  example: Москва
+                phone:
+                  type: string
+                  example: "+7-495-111-1111"
+      responses:
+        "201":
+          description: Магазин создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Store"
+        "400":
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /stores/{id}:
+    get:
+      summary: Детали магазина
+      description: |
+        Возвращает магазин с меню (товарами).
+
+        **SQL:**
+        ```sql
+        SELECT * FROM stores WHERE id = ? AND user_token = ?;
+        SELECT * FROM products WHERE store_id = ? AND user_token = ?;
+        ```
+      tags: [Stores]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Магазин с товарами
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Store"
+                  - type: object
+                    properties:
+                      products:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Product"
+        "404":
+          description: Магазин не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Обновить магазин
+      description: |
+        Частичное обновление данных магазина.
+
+        **SQL:**
+        ```sql
+        UPDATE stores SET name = ?, type = ?, updated_at = datetime('now')
+        WHERE id = ? AND user_token = ?;
+        SELECT * FROM stores WHERE id = ?;
+        ```
+      tags: [Stores]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                city:
+                  type: string
+                phone:
+                  type: string
+                rating:
+                  type: number
+                  minimum: 0
+                  maximum: 5
+      responses:
+        "200":
+          description: Обновлённый магазин
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Store"
+        "404":
+          description: Магазин не найден
+    delete:
+      summary: Удалить магазин
+      description: |
+        Удаляет магазин и все его товары. **Не удаляет**, если есть активные заказы (pending, confirmed, preparing).
+
+        **SQL:**
+        ```sql
+        -- Проверка активных заказов
+        SELECT COUNT(*) as cnt FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        JOIN products p ON p.id = oi.product_id
+        WHERE p.store_id = ? AND o.status IN ('pending','confirmed','preparing');
+        -- Если cnt = 0 → DELETE
+        DELETE FROM stores WHERE id = ? AND user_token = ?;
+        ```
+      tags: [Stores]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Магазин удалён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "400":
+          description: Есть активные заказы
+        "404":
+          description: Магазин не найден
+  /stores/{storeId}/products:
+    get:
+      summary: Товары магазина
+      description: |
+        Список товаров в меню магазина. Поддерживает фильтр по категории.
+
+        **SQL:**
+        ```sql
+        SELECT * FROM products
+        WHERE store_id = ? AND user_token = ? AND category = ?
+        ORDER BY name ASC;
+        ```
+      tags: [Products]
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Список товаров
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+    post:
+      summary: Добавить товар
+      description: |
+        Добавляет товар в меню магазина. `name` обязателен, `price` > 0.
+
+        **SQL (транзакция):**
+        ```sql
+        BEGIN TRANSACTION;
+        INSERT INTO products (user_token, store_id, name, price, category, stock)
+        VALUES (?, ?, ?, ?, ?, ?);
+        SELECT * FROM products WHERE id = last_insert_rowid();
+        COMMIT;
+        ```
+      tags: [Products]
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, price]
+              properties:
+                name:
+                  type: string
+                  example: Чизбургер
+                description:
+                  type: string
+                price:
+                  type: number
+                  minimum: 0.01
+                  example: 199
+                category:
+                  type: string
+                  example: main
+                stock:
+                  type: integer
+                  minimum: 0
+                  example: 50
+      responses:
+        "201":
+          description: Товар создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+  /products/{id}:
+    patch:
+      summary: Обновить товар
+      description: |
+        Изменяет цену, название, описание или количество товара. Цена должна быть > 0.
+
+        **SQL:**
+        ```sql
+        UPDATE products SET price = ?, name = ?, stock = ?
+        WHERE id = ? AND user_token = ?;
+        SELECT * FROM products WHERE id = ?;
+        ```
+      tags: [Products]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                price:
+                  type: number
+                  minimum: 0.01
+                category:
+                  type: string
+                stock:
+                  type: integer
+                  minimum: 0
+      responses:
+        "200":
+          description: Обновлённый товар
+        "404":
+          description: Товар не найден
+    delete:
+      summary: Удалить товар
+      tags: [Products]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Товар удалён
+        "404":
+          description: Товар не найден
+  /cart:
+    get:
+      summary: Корзина пользователя
+      description: |
+        Текущая корзина с подсчётом сумм.
+
+        **SQL:**
+        ```sql
+        SELECT ci.id, ci.product_id, ci.quantity, p.name, p.price,
+               (ci.quantity * p.price) AS line_total
+        FROM cart_items ci
+        JOIN products p ON p.id = ci.product_id
+        WHERE ci.user_token = ?
+        ORDER BY ci.added_at ASC;
+        ```
+      tags: [Cart]
+      responses:
+        "200":
+          description: Позиции корзины
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CartItem"
+    post:
+      summary: Добавить в корзину
+      description: |
+        Добавляет товар в корзину. Если уже есть — увеличивает количество.
+        `quantity` > 0, `quantity <= stock`.
+
+        **SQL:**
+        ```sql
+        -- Если товар уже в корзине:
+        UPDATE cart_items SET quantity = quantity + ?
+        WHERE user_token = ? AND product_id = ?;
+        -- Если нет:
+        INSERT INTO cart_items (user_token, product_id, quantity)
+        VALUES (?, ?, ?);
+        ```
+      tags: [Cart]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_id]
+              properties:
+                product_id:
+                  type: integer
+                quantity:
+                  type: integer
+                  minimum: 1
+                  default: 1
+      responses:
+        "201":
+          description: Товар добавлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: ID позиции в корзине
+                  product_id:
+                    type: integer
+                  quantity:
+                    type: integer
+                  line_total:
+                    type: number
+  /cart/{itemId}:
+    patch:
+      summary: Изменить количество
+      description: |
+        Обновляет количество конкретной позиции. `quantity` > 0.
+        Если товара нет в корзине — 404.
+      tags: [Cart]
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: Количество обновлено
+        "404":
+          description: Позиция не найдена
+    delete:
+      summary: Удалить из корзины
+      tags: [Cart]
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Позиция удалена
+        "404":
+          description: Позиция не найдена
+  /orders:
+    post:
+      summary: Оформить заказ
+      description: |
+        Создаёт заказ из текущей корзины. Корзина очищается.
+        `delivery_address` обязателен, не пустой.
+        Корзина не должна быть пустой.
+
+        **SQL (транзакция):**
+        ```sql
+        BEGIN TRANSACTION;
+        -- Проверка корзины
+        SELECT COUNT(*) as cnt FROM cart_items WHERE user_token = ?;
+        -- Создание заказа
+        INSERT INTO orders (user_token, status, delivery_address, total_cost)
+        VALUES (?, 'pending', ?, ?);
+        -- Перенос товаров в order_items
+        INSERT INTO order_items (order_id, user_token, product_id, product_name, quantity, unit_price)
+        SELECT ?, ?, ci.product_id, p.name, ci.quantity, p.price
+        FROM cart_items ci JOIN products p ON p.id = ci.product_id
+        WHERE ci.user_token = ?;
+        -- Очистка корзины
+        DELETE FROM cart_items WHERE user_token = ?;
+        COMMIT;
+        ```
+      tags: [Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delivery_address]
+              properties:
+                delivery_address:
+                  type: string
+                  minLength: 1
+                  example: ул. Ленина, д. 10, кв. 5
+      responses:
+        "201":
+          description: Заказ создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Ошибка — пустой адрес или пустая корзина
+    get:
+      summary: Список заказов
+      description: |
+        Заказы текущего пользователя. Поддерживает фильтр по статусу.
+
+        **SQL:**
+        ```sql
+        SELECT * FROM orders
+        WHERE user_token = ? AND status = ?
+        ORDER BY created_at DESC;
+        ```
+      tags: [Orders]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, confirmed, preparing, delivering, delivered, cancelled]
+      responses:
+        "200":
+          description: Список заказов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+  /orders/{id}:
+    get:
+      summary: Детали заказа
+      description: |
+        Полная информация о заказе. Доступен только владельцу.
+
+        **SQL (транзакция):**
+        ```sql
+        SELECT * FROM orders WHERE id = ? AND user_token = ?;
+        SELECT * FROM order_items WHERE order_id = ?;
+        ```
+      tags: [Orders]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Детали заказа
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderDetail"
+        "404":
+          description: Заказ не найден
+  /orders/{id}/cancel:
+    patch:
+      summary: Отменить заказ
+      description: |
+        Отменяет заказ, если он в статусе `pending`.
+
+        **SQL:**
+        ```sql
+        SELECT status FROM orders WHERE id = ? AND user_token = ?;
+        -- Если status = 'pending':
+        UPDATE orders SET status = 'cancelled', updated_at = datetime('now')
+        WHERE id = ? AND user_token = ?;
+        ```
+      tags: [Orders]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Заказ отменён
+        "400":
+          description: Заказ нельзя отменить (статус не `pending`)
+        "404":
+          description: Заказ не найден
+  /orders/{id}/delivery:
+    get:
+      summary: Статус доставки
+      description: |
+        Информация о доставке: курьер, адрес, оценочное время.
+
+        **SQL:**
+        ```sql
+        SELECT id, status, courier_id, delivery_address
+        FROM orders WHERE id = ? AND user_token = ?;
+        ```
+      tags: [Delivery]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Статус доставки
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: integer
+                  status:
+                    type: string
+                  courier_id:
+                    type: string
+                    nullable: true
+                  delivery_address:
+                    type: string
+                  estimated_minutes:
+                    type: integer
+                    nullable: true
+                    description: null, если курьер не назначен
+        "404":
+          description: Заказ не найден
+  /orders/{id}/delivery/assign:
+    patch:
+      summary: Назначить курьера
+      description: |
+        Назначает курьера на заказ. Заказ переходит в статус `delivering`.
+        `courier_id` обязателен.
+
+        **SQL:**
+        ```sql
+        UPDATE orders
+        SET courier_id = ?, status = 'delivering', updated_at = datetime('now')
+        WHERE id = ? AND user_token = ?;
+        ```
+      tags: [Delivery]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [courier_id]
+              properties:
+                courier_id:
+                  type: string
+                  example: courier-001
+      responses:
+        "200":
+          description: Курьер назначен
+        "404":
+          description: Заказ не найден
+components:
+  schemas:
+    Store:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+        city:
+          type: string
+        phone:
+          type: string
+        rating:
+          type: number
+          format: float
+        is_active:
+          type: integer
+          enum: [0, 1]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      example:
+        id: 1
+        name: Бургерная №1
+        type: fast_food
+        city: Москва
+        phone: "+7-495-111-1111"
+        rating: 4.2
+        is_active: 1
+        created_at: "2026-06-07 10:37:34"
+        updated_at: "2026-06-07 10:37:34"
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+        store_id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        category:
+          type: string
+        stock:
+          type: integer
+        is_available:
+          type: integer
+          enum: [0, 1]
+        created_at:
+          type: string
+          format: date-time
+    CartItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        product_id:
+          type: integer
+        name:
+          type: string
+        price:
+          type: number
+        quantity:
+          type: integer
+        stock:
+          type: integer
+        line_total:
+          type: number
+        store_id:
+          type: integer
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [pending, confirmed, preparing, delivering, delivered, cancelled]
+        delivery_address:
+          type: string
+        total_cost:
+          type: number
+          nullable: true
+        courier_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OrderDetail:
+      allOf:
+        - $ref: "#/components/schemas/Order"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  product_id:
+                    type: integer
+                  product_name:
+                    type: string
+                  quantity:
+                    type: integer
+                  unit_price:
+                    type: number
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: string
+      example:
+        error: "Ошибка валидации"
+        details: "Поле 'name' обязательно"
