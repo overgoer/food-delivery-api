@@ -1,0 +1,17 @@
+{
+  "name": "food-delivery-api",
+  "version": "1.0.0",
+  "description": "Food Delivery API — контент-тренажёр для тестирования API. Express.js + SQLite с намеренными багами.",
+  "main": "v1/index.js",
+  "scripts": {
+    "dev": "node v1/index.js",
+    "dev:v2": "node v2/index.js",
+    "seed": "node v1/db/seed.js"
+  },
+  "keywords": ["api-testing", "demo", "food-delivery", "training"],
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "express": "^4.18.2"
+  }
+}
