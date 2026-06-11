@@ -1,4 +1,8 @@
 const express = require('express');
+const swaggerUi = require('swagger-ui-express');
+const yaml = require('yaml');
+const fs = require('fs');
+const path = require('path');
 const { identifyUser } = require('./middleware/auth');
 const { getDb } = require('./db/database');
 
@@ -8,6 +12,10 @@ const cartRouter = require('./routes/cart');
 const ordersRouter = require('./routes/orders');
 const deliveryRouter = require('./routes/delivery');
 
+// Swagger
+const openapiPath = path.join(__dirname, '..', 'docs', 'openapi.yaml');
+const swaggerDocument = yaml.parse(fs.readFileSync(openapiPath, 'utf8'));
+
 const app = express();
 const PORT = process.env.PORT || 3003;
 
@@ -15,6 +23,9 @@ const PORT = process.env.PORT || 3003;
 getDb();
 
 app.use(express.json());
+
+// Swagger UI (без авторизации)
+app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Идентификация пользователя
 app.use(identifyUser);
