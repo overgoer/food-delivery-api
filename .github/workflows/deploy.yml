@@ -1,0 +1,26 @@
+name: Deploy to Timeweb (Food Delivery API)
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        run: |
+          SSH_KEY="${{ secrets.SERVER_SSH_KEY }}"
+          HOST="${{ secrets.SERVER_HOST }}"
+          PORT="${{ secrets.SERVER_PORT }}"
+          USER="${{ secrets.SERVER_USER }}"
+
+          KEY_FILE=$(mktemp)
+          echo "$SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          trap "rm -f $KEY_FILE" EXIT
+
+          ssh -p "$PORT" -i "$KEY_FILE" -o StrictHostKeyChecking=no "$USER@$HOST" \
+            "cd /var/www/food-delivery-api && \
+             git pull origin main && \
+             pm2 restart food-v1 food-v2 || true"
