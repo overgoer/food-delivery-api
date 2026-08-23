@@ -1,7 +1,7 @@
 const { getDb } = require('../db/database');
 
 /**
- * Извлекает user_token из заголовка X-API-Key.
+ * Извлекает user_token из куки user_token или заголовка X-API-Key.
  * Если токена нет — создаёт новую сессию (анонимно).
  * Автоматически подмешивает user_token во все запросы.
  *
@@ -10,7 +10,7 @@ const { getDb } = require('../db/database');
  * его может кто угодно.
  */
 function identifyUser(req, res, next) {
-  let token = req.headers['x-api-key'];
+  let token = (req.cookies && req.cookies.user_token) || req.headers['x-api-key'];
 
   if (!token) {
     // Создаём новую сессию для анонима (намеренно — часть B8)

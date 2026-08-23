@@ -17,6 +17,12 @@ function getDb() {
 
 function initSchema() {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_token TEXT NOT NULL UNIQUE,
@@ -87,6 +93,14 @@ function initSchema() {
       FOREIGN KEY (product_id) REFERENCES products(id)
     );
   `);
+
+  // Демо-пользователи для входа по кукам. B18: пароли в открытом виде.
+  const count = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
+  if (count === 0) {
+    const insert = db.prepare('INSERT INTO users (username, password) VALUES (?, ?)');
+    insert.run('alice', 'password123');
+    insert.run('bob', 'password123');
+  }
 }
 
 module.exports = { getDb };

@@ -95,6 +95,9 @@
 | B14 | **GET /stores?type= — нечувствительность к регистру** | Тип магазина фильтруется неверно при изменении регистра |
 | B15 | **GET /orders?status=pending — игнорирует статус** | Возвращает все заказы, статус не учитывается |
 | B16 | **PATCH /orders/:id/cancel — отмена уже отменённого** | Всегда `{success:true}`, можно отменить повторно |
+| B17 | **POST /login — кука без httpOnly** | `user_token` доступна из JavaScript — XSS-риск |
+| B18 | **Пароли в БД открытым текстом** | Таблица `users` хранит пароли без хэширования |
+| B19 | **POST /logout — сессия остаётся в БД** | Кука чистится, но `user_token` продолжает работать через заголовок |
 
 ---
 
@@ -119,3 +122,18 @@ npm install
 npm run dev     # v1 (c багами) — порт 3003
 npm run dev:v2  # v2 (исправленная версия) — порт 3004
 ```
+
+## Вход по кукам (v1)
+
+Демо-пользователи: `alice / password123`, `bob / password123`.
+
+```bash
+curl -c cookies.txt -X POST http://localhost:3003/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"password123"}'
+
+curl -b cookies.txt http://localhost:3003/orders   # кука вместо X-API-Key
+```
+
+Страница входа для браузера: `GET /login`.
+Для демо Interceptor: залогинься в браузере → кука `user_token` улетает в Postman через Postman Interceptor.
