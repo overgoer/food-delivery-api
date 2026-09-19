@@ -87,8 +87,8 @@ document.getElementById('f').addEventListener('submit', async (e) => {
 // Демо для доклада: легаси чувствителен к кавычкам в заголовке
 app.get('/demo/quotes', (req, res) => {
   const h = req.headers['x-quoted'] || '';
-  const hasSmart = h.includes('\u201C') || h.includes('\u201D');
-  if (hasSmart) {
+  const hasStraight = h.includes('"');
+  if (!hasStraight) {
     res.json({ status: 'ok', message: 'Легаси доволен: кавычки те самые' });
   } else {
     res.status(400).json({ error: 'Invalid header format' });
