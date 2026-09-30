@@ -181,6 +181,12 @@ paths:
           required: true
           schema:
             type: integer
+        - name: If-Match
+          in: header
+          required: false
+          description: Версия ресурса из ETag ответа GET. Не совпала — 412 Precondition Failed.
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
@@ -199,6 +205,9 @@ paths:
                   type: number
                   minimum: 0
                   maximum: 5
+                meta:
+                  type: object
+                  description: Вложенные данные. null в ключе удаляет его (RFC 7386)
       responses:
         "200":
           description: Обновлённый магазин
@@ -208,6 +217,64 @@ paths:
                 $ref: "#/components/schemas/Store"
         "404":
           description: Магазин не найден
+    put:
+      summary: Полная замена магазина
+      description: |
+        PUT заменяет ресурс целиком: непереданные поля затираются до значений по умолчанию. Это спека, не баг.
+
+        **SQL:**
+        ```sql
+        UPDATE stores SET name = ?, type = ?, city = ?, phone = ?, rating = ?, meta = ?, updated_at = datetime('now')
+        WHERE id = ? AND user_token = ?;
+        ```
+      tags: [Stores]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: If-Match
+          in: header
+          required: false
+          description: Версия ресурса из ETag ответа GET. Не совпала — 412 Precondition Failed.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                city:
+                  type: string
+                phone:
+                  type: string
+                rating:
+                  type: number
+                  minimum: 0
+                  maximum: 5
+                meta:
+                  type: object
+      responses:
+        "200":
+          description: Магазин заменён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Store"
+        "400":
+          description: name обязателен
+        "404":
+          description: Магазин не найден
+        "412":
+          description: If-Match не совпал — данные изменились
     delete:
       summary: Удалить магазин
       description: |
@@ -731,6 +798,28 @@ components:
         updated_at:
           type: string
           format: date-time
+        meta:
+          type: object
+          description: "Вложенный JSON (RFC 7386: null в PATCH удаляет ключ)"
+          properties:
+            contacts:
+              type: object
+              properties:
+                telegram:
+                  type: string
+                email:
+                  type: string
+            settings:
+              type: object
+              properties:
+                notifications:
+                  type: boolean
+                theme:
+                  type: string
+            certifications:
+              type: array
+              items:
+                type: object
       example:
         id: 1
         name: Бургерная №1
