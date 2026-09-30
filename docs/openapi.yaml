@@ -32,6 +32,10 @@ info:
 servers:
   - url: /v2
     description: v2 — исправленная версия
+  - url: /
+    description: v1 — версия с багами
+security:
+  - ApiKeyAuth: []
 paths:
   /stores:
     get:
@@ -770,6 +774,12 @@ paths:
         "404":
           description: Заказ не найден
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Токен из куки user_token (ответ POST /login) или из ответа GET /
   schemas:
     Store:
       type: object
