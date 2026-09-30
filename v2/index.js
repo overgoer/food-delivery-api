@@ -32,6 +32,8 @@ app.use('/docs', (req, res, next) => {
   customSiteTitle: 'Food Delivery API — Документация',
   customCss: `
     .topbar { display: none; }
+    .swagger-ui .info .title small.version-stamp,
+    .swagger-ui .info .title pre.version { background: #7d8492 !important; color: #fff !important; }
     .swagger-ui .info .title { font-size: 28px; }
     .swagger-ui .info { margin: 30px 0; }
     .swagger-ui .opblock-tag { font-size: 18px; }

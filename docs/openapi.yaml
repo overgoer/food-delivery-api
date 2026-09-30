@@ -1,4 +1,4 @@
-openapi: "3.1.0"
+openapi: 3.0.3
 info:
   title: Food Delivery API
   description: |
@@ -22,18 +22,16 @@ info:
 
     ---
 
-    **v2 (фиксы):** `http://localhost:3004`
-    **v1 (баги):** `http://localhost:3003`
+    **v2 (фиксы):** `https://food.eddytester.com/v2`
+    **v1 (баги):** `https://food.eddytester.com`
 
   version: "2.0.0"
   contact:
     name: eddytester
     url: https://eddytester.com
 servers:
-  - url: http://localhost:3004
+  - url: /v2
     description: v2 — исправленная версия
-  - url: http://localhost:3003
-    description: v1 — версия с багами
 paths:
   /stores:
     get:
