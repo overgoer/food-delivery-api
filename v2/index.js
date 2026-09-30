@@ -25,7 +25,10 @@ const specRaw = fs.readFileSync(specPath, 'utf8');
 const spec = YAML.parse(specRaw);
 
 // Swagger UI — красивая документация
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(spec, {
+app.use('/docs', (req, res, next) => {
+  if (req.originalUrl === '/docs') return res.redirect(301, './docs/');
+  next();
+}, swaggerUi.serveWithOptions({ redirect: false }), swaggerUi.setup(spec, {
   customSiteTitle: 'Food Delivery API — Документация',
   customCss: `
     .topbar { display: none; }
