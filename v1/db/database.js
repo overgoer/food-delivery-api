@@ -38,6 +38,7 @@ function initSchema() {
       phone TEXT NOT NULL DEFAULT '',
       rating REAL NOT NULL DEFAULT 0,
       is_active INTEGER NOT NULL DEFAULT 1,
+      meta TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (user_token) REFERENCES sessions(user_token)

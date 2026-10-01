@@ -52,6 +52,45 @@ app.get('/openapi.json', (req, res) => {
 
 // Middleware
 app.use(express.json());
+
+// ─── Signup (вебинар): токен + демо-магазин с meta ────────
+// Служебная ручка: бот выдаёт зрителям токен с готовыми данными,
+// чтобы сразу было с чем работать. В свагер не попадает.
+app.post('/signup', (req, res) => {
+  const db = getDb();
+  const crypto = require('crypto');
+  const token = crypto.randomUUID();
+  const demoMeta = JSON.stringify({
+    contacts: { telegram: "@demo_pizza", email: "hi@margherita.ru" },
+    settings: { notifications: true, theme: "light" },
+    certifications: [
+      { type: "ISO", id: "RU-2026-001" },
+      { type: "HACCP", id: "RU-2026-002" }
+    ]
+  });
+  try {
+    db.prepare('INSERT INTO sessions (user_token) VALUES (?)').run(token);
+    const st = db.prepare(
+      'INSERT INTO stores (user_token, name, type, city, phone, rating, is_active, meta) VALUES (?, ?, ?, ?, ?, ?, 1, ?)'
+    ).run(token, 'Пиццерия Маргарита', 'pizza', 'Москва', '+7 900 000-00-00', 4.5, demoMeta);
+    const storeId = st.lastInsertRowid;
+    const insP = db.prepare(
+      'INSERT INTO products (user_token, store_id, name, description, price, category, stock, is_available) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
+    );
+    insP.run(token, storeId, 'Маргарита 30 см', 'Томаты, моцарелла, базилик', 550, 'pizza', 20);
+    insP.run(token, storeId, 'Пепперони 30 см', 'Пепперони, моцарелла, томатный соус', 650, 'pizza', 15);
+    res.status(201).json({
+      token,
+      message: 'Демо-магазин создан: Пиццерия Маргарита',
+      store_id: storeId,
+      docs: '/docs'
+    });
+  } catch (err) {
+    console.error('signup error:', err.message);
+    res.status(500).json({ error: 'Внутренняя ошибка стенда' });
+  }
+});
+
 app.use(identifyUser);
 
 // Корень
